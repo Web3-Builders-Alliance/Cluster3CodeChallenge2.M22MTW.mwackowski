@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::helpers::DepositContract;
-    use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, Cw20HookMsg, Cw20DepositResponse, DepositResponse, Cw721DepositResponse};
+    use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, Cw20HookMsg, Cw20DepositResponse, DepositResponse, Cw721DepositResponse, Cw721HookMsg};
     use cosmwasm_std::{Addr, Coin, Empty, Uint128, to_binary, BankQuery, BankMsg, coin, WasmMsg};
     use cw20::{Cw20Contract, Cw20Coin, BalanceResponse};
     use cw20_base::msg::ExecuteMsg as Cw20ExecuteMsg;
@@ -220,8 +220,75 @@ mod tests {
 
     #[test]
     fn mint_then_deposit_nft_then_withdraw_nft_back_to_owner() {
-        unimplemented!()
+        let (mut app, deposit_id, _cw20_id, cw721_id) = store_code();
+        let deposit_contract = deposit_instantiate(&mut app, deposit_id);
+        let nft_contract = cw721_instantiate(
+            &mut app,
+            cw721_id,
+            "wladzioo nft".to_string(),
+            "wld".to_string(),
+            USER.to_string()
+        );
+
+        let token_id = "999".to_string();
+
+        let mint_msg = nft::contract::ExecuteMsg::Mint(nft::contract::MintMsg {
+            token_id: token_id.clone(),
+            owner: USER.to_string(),
+            token_uri: None,
+            extension: None,
+        });
+
+        let execute_msg = WasmMsg::Execute {
+            contract_addr: nft_contract.addr().to_string(),
+            msg: to_binary(&mint_msg).unwrap(),
+            funds: vec![],
+        };
+
+        let res = app.execute(Addr::unchecked(USER), execute_msg.into());
+        println!("\nMint Response: {:?}", res);
+        assert!(!res.is_err());
+        println!(
+            "\nDeposits: {:?}",
+            get_cw721_deposits(&app, &deposit_contract, &nft_contract)
+        );
+
+        let hook_msg = Cw721HookMsg::Deposit {};
+        let msg = nft::contract::ExecuteMsg::SendNft {
+            contract: deposit_contract.addr().to_string(),
+            token_id: token_id.clone(),
+            msg: to_binary(&hook_msg).unwrap(),
+        };
+        let cosmos_msg = nft_contract.call(msg).unwrap();
+        let res = app.execute(Addr::unchecked(USER), cosmos_msg);
+        println!("\nDeposit Response: {:?}", res);
+        assert!(!res.is_err());
+        println!(
+            "\nDeposits: {:?}",
+            get_cw721_deposits(&app, &deposit_contract, &nft_contract)
+        );
+        println!(
+            "\nOwner of token {}: {:?}",
+            token_id,
+            get_owner_of(&app, &nft_contract, token_id.clone())
+        );
+
+        // WITHDRAW
+        let withdraw_msg = ExecuteMsg::WithdrawNft {
+            contract: nft_contract.addr().into(),
+            token_id: token_id.clone(),
+        };
+        let execute_msg = WasmMsg::Execute {
+            contract_addr: deposit_contract.addr().into(),
+            msg: to_binary(&withdraw_msg).unwrap(),
+            funds: vec![],
+        };
+        let res = app.execute(Addr::unchecked(USER), execute_msg.into());
+        println!("\nWithdraw Response: {:?}", res);
+        assert!(!res.is_err());
     }
+
+
 
 
 
